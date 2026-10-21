@@ -4,9 +4,9 @@ Reusable instructions for agents connected to [Organize with AI](https://organiz
 This package contains only instructions and synthetic call examples: no media,
 credentials, application binaries, analytics, install hooks, or automatic tool calls.
 
-## owai-media-library · 1.0.0
+## owai-media-library · 1.1.0
 
-Search photos and videos, show previews, curate collections and groups, review
+Search photos and videos, read images, curate collections and groups, review
 duplicates, and use approved deletion/recovery workflows through OwAI MCP.
 
 1. Connect OwAI using the [setup guide](https://organizewith.ai/en/guides/connect-ai-assistants).
@@ -27,8 +27,11 @@ duplicates, and use approved deletion/recovery workflows through OwAI MCP.
    before approving them.
 
 The skill does not grant OAuth permissions, switch processing modes, enable
-remote media access, or bypass confirmations. Remote previews send the selected
-preview to the assistant; they are optional and require an online owner.
+remote media access, or bypass confirmations. Remote image reads send selected
+media to the assistant. Local-folder and Apple Photos media require an online
+owner with relay enabled; OneDrive reads use the authorized provider directly.
+The skill covers all three source types through the same OwAI MCP tools and
+explains their different output locations and original-file recovery policies.
 
 ## Verification
 

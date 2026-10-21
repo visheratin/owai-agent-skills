@@ -35,7 +35,7 @@ transcription from the returned preview, not from a similarity score.
 {"tool":"locate_media","arguments":{"asset_ids":["example-asset-a"],"include_metadata":true}}
 ```
 
-Show a preview, including from a remote caller without local-opening eligibility:
+Read an image, including from a remote caller without local-opening eligibility:
 
 ```json
 {"tool":"read_media","arguments":{"asset_id":"example-asset-a"}}
@@ -69,7 +69,8 @@ requested operation, such as export:
 {"tool":"export_media","arguments":{"selection_type":"collection","selection_id":"example-collection","idempotency_key":"example-export-winter"}}
 ```
 
-The completed export's path is on the owner, not an assistant attachment.
+The completed local-folder/Photos export's path is on the owner, not an assistant
+attachment. OneDrive exports return tracked provider results under OneDrive/OwAI.
 
 ## Review the least similar duplicate sets
 
@@ -91,34 +92,73 @@ Preview only the original(s) proposed for removal. Keepers are not in this list.
 ```
 
 Wait for completion before asking for approval. Present exact items and the
-preview's retention warning. Updated desktops retain deleted files on the
+preview's retention warning. Filesystem sources retain deleted files on the
 original drive for 30 days, then permanently remove them while the app is
-running and the drive is available. Approval must cover that policy. If the
+running and the drive is available. OneDrive uses Microsoft's recycle bin;
+Apple Photos uses Recently Deleted. Approval must cover the actual policy. If the
 preview lacks an expected policy or is already expired, do not assume it.
 
-Only after approval, use the real returned owner device and plan IDs:
+Only after approval, use the real returned plan ID. OwAI derives its owner from
+the preview receipt; do not guess or pass a device ID:
 
 ```json
-{"tool":"apply_media_deletion","arguments":{"device_id":"example-device","plan_id":"example-approved-plan","confirm_delete_originals":true,"include_favorites":false,"idempotency_key":"example-apply-removal"}}
+{"tool":"apply_media_deletion","arguments":{"plan_id":"example-approved-plan","confirm_delete_originals":true,"include_favorites":false,"idempotency_key":"example-apply-removal"}}
 ```
 
-For local MCP, the same operation omits `device_id` if absent from its schema.
 Do not set `include_favorites:true` unless the user explicitly approved those
 favorites. An invalidated plan needs a new preview and approval. Poll remote
 commands and read per-item results before claiming deletion.
 
-For requested undo, find recovery IDs on the owning device:
+For requested undo, find recovery IDs for the relevant source. A device-bound
+connection can omit the source; an unbound remote connection with multiple
+owners should pass the real source ID returned by library inspection:
 
 ```json
-{"tool":"inspect_activity","arguments":{"device_id":"example-device","limit":10,"offset":0}}
+{"tool":"inspect_activity","arguments":{"source_id":"example-source","limit":10,"offset":0}}
 ```
 
 After inspecting completed activity and selecting the relevant non-purged item:
 
 ```json
-{"tool":"restore_media","arguments":{"device_id":"example-device","recovery_id":"example-recovery","idempotency_key":"example-restore-removal"}}
+{"tool":"restore_media","arguments":{"recovery_id":"example-recovery","idempotency_key":"example-restore-removal"}}
 ```
 
-Local MCP omits `device_id` on these two calls if it is not advertised. Remote
+OwAI derives restore ownership from the recovery/activity receipt. Remote
 pending activity is not an empty history. Report restore conflicts or purged
 files instead of attempting direct filesystem recovery.
+
+## Connected Apple Photos and OneDrive
+
+Use `inspect_library` to find the actual source ID and kind, then use the same
+search and organization calls above. Do not infer source ownership from the
+computer running the chat or pass a `cloud:` owner as a local device binding.
+
+| Source | Search/inspection | Reads and edits | Export and original recovery |
+| --- | --- | --- | --- |
+| Apple Photos (`photo_library`) | Last synced catalog is available remotely while the Mac is offline. | Reads and queued changes require the owning Mac's OwAI app. Media reads additionally need Photos permission and enabled relay. Uncached iCloud items need network access. | Current rendered JPEG/MP4 copies are exported on the Mac. Approved deletion goes through Photos; restore in Photos → Recently Deleted, then sync. |
+| OneDrive (`onedrive`) | Server-owned catalog is available without a desktop. | Provider content and cloud commands use the existing OneDrive authorization. Pending file jobs must finish before reporting success. | Cloud exports go to OneDrive/OwAI. Restore original files in OneDrive's recycle bin under Microsoft's policy. |
+
+For example, after discovering a Photos album source named “Summer album”:
+
+```json
+{"tool":"search_media","arguments":{"source_name":"Summer album","media_type":"image","visual_query":"beach","limit":5}}
+```
+
+Call `read_media` on a returned asset ID to inspect its current rendering. Never
+send the `apple-photos://` locator to shell or filesystem tools. Editable Photos
+user albums link to OwAI collections. Album renames in Photos are imported on
+sync; use only the collection operations actually advertised by the tool, not
+an invented rename operation. Collection creation, membership changes and
+deletion update the native album. Favorites
+synchronize too. OwAI groups publish their selected photos to native albums;
+group rules and face labels remain OwAI metadata. Deleting a mapped collection
+or group removes its native album but not the originals; removing the OwAI
+source does not remove native albums. Poll pending commands and check
+`native_sync.operations` before reporting a native edit as applied.
+After resolving a native failure and syncing the source, retry the same request
+with its original idempotency key; do not create a new command to bypass the error.
+The connector indexes the still part of
+Live Photos, not a separately searchable motion clip. It does not provide direct
+iCloud login, arbitrary `.photoslibrary` access, or in-place optimization of
+Photos originals. If an operation is unsupported, report that boundary instead
+of changing the Photos package or an exported cache file.
